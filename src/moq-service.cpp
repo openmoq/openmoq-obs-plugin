@@ -11,27 +11,29 @@ MOQService::MOQService(obs_data_t *settings, obs_service_t *service)
 void MOQService::Update(obs_data_t *settings)
 {
 	server = obs_data_get_string(settings, "server");
-    moq_namespace = obs_data_get_string(settings, "key"); // todo: verify that this is the correct key for the namespace
+	// todo: verify that this is the correct key for the namespace
+	moq_namespace = obs_data_get_string(settings, "key");
 	blog(LOG_INFO, "[obs-moq] service updated: server='%s' namespace='%s'", server.c_str(), moq_namespace.c_str());
 }
 
 obs_properties_t *MOQService::Properties()
 {
-    obs_properties_t *ppts = obs_properties_create();
+	obs_properties_t *ppts = obs_properties_create();
 
-    obs_properties_add_text(ppts, "server", obs_module_text("Service.Server"), OBS_TEXT_DEFAULT);
-    obs_properties_add_text(ppts, "key", obs_module_text("Service.Namespace"), OBS_TEXT_DEFAULT);
+	obs_properties_add_text(ppts, "server", obs_module_text("Service.Server"), OBS_TEXT_DEFAULT);
+	obs_properties_add_text(ppts, "key", obs_module_text("Service.Namespace"), OBS_TEXT_DEFAULT);
 
-    return ppts;
+	return ppts;
 }
 
-// todo: validate if we need custom encoder settings 
+// todo: validate if we need custom encoder settings
 void MOQService::ApplyEncoderSettings(obs_data_t *video_settings, obs_data_t *audio_settings)
 {
-    blog(LOG_INFO, "[obs-moq] apply encoder settings");
-    if (video_settings) {
+	blog(LOG_INFO, "[obs-moq] apply encoder settings");
+	if (video_settings) {
 		obs_data_set_int(video_settings, "bf", 0);
-		obs_data_set_bool(video_settings, "repeat_headers", true); //todo: check if this is needed
+		//todo: check if this is needed
+		obs_data_set_bool(video_settings, "repeat_headers", true);
 	}
 }
 
@@ -47,15 +49,14 @@ const char *MOQService::GetConnectInfo(enum obs_service_connect_info info)
 	}
 }
 
-
 bool MOQService::CanTryToConnect()
 {
 	return !server.empty();
 }
 
-void register_moq_service() 
+void register_moq_service()
 {
-    struct obs_service_info info = {};
+	struct obs_service_info info = {};
 
 	info.id = "MOQ";
 	info.get_name = [](void *) -> const char * {
@@ -106,5 +107,5 @@ void register_moq_service()
 	};
 
 	obs_register_service(&info);
-    blog(LOG_INFO, "[obs-moq] registered service '%s' (protocol MOQ -> output moq_output)", info.id);
+	blog(LOG_INFO, "[obs-moq] registered service '%s' (protocol MOQ -> output moq_output)", info.id);
 }

@@ -29,4 +29,3 @@ bool obs_module_load(void)
 	register_moq_service();
 	return true;
 }
-

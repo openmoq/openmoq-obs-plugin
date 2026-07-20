@@ -3,7 +3,6 @@
 #include <obs-avc.h>
 #include <vector>
 
-
 static std::string AvcCodecString(const std::vector<uint8_t> &avcc)
 {
 	uint8_t profile = 0x42, constraints = 0xe0, level = 0x1f;
@@ -31,4 +30,3 @@ static std::vector<uint8_t> AnnexBToAvcC(const uint8_t *extra, size_t size)
 	bfree(avcc);
 	return out;
 }
-
