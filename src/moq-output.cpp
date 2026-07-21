@@ -72,17 +72,17 @@ bool MOQOutput::LoadVideoEncoderSettings()
 	return true;
 }
 
-bool MOQOutput::LoadAudioEncoderSettings() 
+bool MOQOutput::LoadAudioEncoderSettings()
 {
-    obs_encoder_t *aenc = obs_output_get_audio_encoder(output, 0);
-    if (!aenc) {
-        blog(LOG_WARNING, "[obs-moq] no audio encoder assigned");
-        obs_output_set_last_error(output, obs_module_text("Error.NoAudioEncoder"));
-        return false;
-    }
+	obs_encoder_t *aenc = obs_output_get_audio_encoder(output, 0);
+	if (!aenc) {
+		blog(LOG_WARNING, "[obs-moq] no audio encoder assigned");
+		obs_output_set_last_error(output, obs_module_text("Error.NoAudioEncoder"));
+		return false;
+	}
 
-    OBSDataAutoRelease settings = obs_encoder_get_settings(aenc);
-    audio_conf.bitrate = (uint64_t)obs_data_get_int(settings, "bitrate") * 1000;
+	OBSDataAutoRelease settings = obs_encoder_get_settings(aenc);
+	audio_conf.bitrate = (uint64_t)obs_data_get_int(settings, "bitrate") * 1000;
 	audio_t *audio = obs_encoder_audio(aenc);
 	audio_conf.samplerate = audio_output_get_sample_rate(audio);
 	audio_conf.channels = std::to_string(audio_output_get_channels(audio));
@@ -96,7 +96,7 @@ bool MOQOutput::LoadAudioEncoderSettings()
 	audio_init_data.assign(extra, extra + extra_size);
 	audio_codec = AacCodecString(audio_init_data);
 
-    return true;
+	return true;
 }
 
 bool MOQOutput::ResolveServiceConfig()
@@ -165,7 +165,7 @@ moq_media_track_t *MOQOutput::CreateVideoTrack(moq_media_sender_t *new_sender)
 	return new_track;
 }
 
-moq_media_track_t *MOQOutput::CreateAudioTrack(moq_media_sender_t *new_sender) 
+moq_media_track_t *MOQOutput::CreateAudioTrack(moq_media_sender_t *new_sender)
 {
 	moq_media_track_cfg_t tcfg;
 	moq_media_track_cfg_init(&tcfg);
@@ -256,7 +256,7 @@ bool MOQOutput::Connect()
 		obs_output_signal_stop(output, OBS_OUTPUT_CONNECT_FAILED);
 		return false;
 	}
-	
+
 	moq_media_track_t *new_video_track = CreateVideoTrack(media_sender);
 	if (!new_video_track) {
 		blog(LOG_WARNING, "[obs-moq] failed to create video track");
@@ -272,7 +272,7 @@ bool MOQOutput::Connect()
 		obs_output_signal_stop(output, OBS_OUTPUT_ERROR);
 		return false;
 	}
-	
+
 	{
 		std::lock_guard<std::mutex> lock(sender_mutex);
 		sender = media_sender;
@@ -348,7 +348,8 @@ void MOQOutput::Stop(bool signal)
 	start_time_ns = os_gettime_ns();
 }
 
-void MOQOutput::SendPacket(struct encoder_packet *packet, moq_media_track_t *track, bool is_sync, bool starts_group, bool ends_group)
+void MOQOutput::SendPacket(struct encoder_packet *packet, moq_media_track_t *track, bool is_sync, bool starts_group,
+			   bool ends_group)
 {
 
 	moq_rcbuf_t *payload = nullptr;
@@ -389,7 +390,6 @@ void MOQOutput::SendPacket(struct encoder_packet *packet, moq_media_track_t *tra
 	}
 
 	total_bytes_sent.fetch_add(packet->size);
-
 }
 
 void MOQOutput::Data(struct encoder_packet *packet)
@@ -403,15 +403,12 @@ void MOQOutput::Data(struct encoder_packet *packet)
 	if (!running.load()) {
 		return;
 	}
-	if (packet->type == OBS_ENCODER_VIDEO)
-	{
+	if (packet->type == OBS_ENCODER_VIDEO) {
 		SendPacket(packet, video_track, packet->keyframe, packet->keyframe, false);
 	}
-	if (packet->type == OBS_ENCODER_AUDIO)
-	{
+	if (packet->type == OBS_ENCODER_AUDIO) {
 		SendPacket(packet, audio_track, true, true, true);
 	}
-
 }
 
 void MOQOutput::StartThread()
@@ -443,8 +440,8 @@ void register_moq_output()
 	info.protocols = "MOQ";
 	// todo: add support for hevc and av1
 	info.encoded_video_codecs = "h264";
-	// todo: add support for audio
-	// info.encoded_audio_codecs = "aac;opus";
+	// todo: add support for opus and ac3
+	info.encoded_audio_codecs = "aac";
 
 	info.get_name = [](void *) -> const char * {
 		return obs_module_text("Output.Name");
