@@ -20,6 +20,12 @@ struct video_config {
 	uint64_t bitrate;
 };
 
+struct audio_config {
+    uint32_t samplerate;
+    std::string channels;
+    uint64_t bitrate;
+};
+
 class MOQOutput {
 public:
 	MOQOutput(obs_data_t *settings, obs_output_t *output);
@@ -37,7 +43,10 @@ private:
 	void StartThread();
 	void SplitNamespace();
 	bool LoadVideoEncoderSettings();
-	bool CreateVideoTrack(moq_media_sender_t *new_sender);
+	bool LoadAudioEncoderSettings();
+	moq_media_track_t *CreateVideoTrack(moq_media_sender_t *new_sender);
+	moq_media_track_t *CreateAudioTrack(moq_media_sender_t *new_sender);
+	void SendPacket(struct encoder_packet *packet, moq_media_track_t *track, bool is_sync, bool starts_group, bool ends_group);
 	bool ResolveServiceConfig();
 	bool Connect();
 
@@ -60,9 +69,13 @@ private:
 	std::atomic<bool> got_ready;
 
 	video_config video_conf;
+	audio_config audio_conf;
 
-	std::vector<uint8_t> init_data;
-	std::string codec_string;
+	std::vector<uint8_t> video_init_data;
+	std::string video_codec;
+	
+	std::vector<uint8_t> audio_init_data;
+	std::string audio_codec;
 
 	std::string url;
 	moq_namespace_t namespace_val;
@@ -72,6 +85,7 @@ private:
 
 	moq_media_sender_t *sender = nullptr;
 	moq_media_track_t *video_track = nullptr;
+	moq_media_track_t *audio_track = nullptr;
 };
 
 void register_moq_output();
