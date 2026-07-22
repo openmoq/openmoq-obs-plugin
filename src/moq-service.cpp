@@ -1,6 +1,6 @@
 #include "moq-service.h"
 
-const char *audio_codecs[] = {"aac", nullptr};
+const char *audio_codecs[] = {"aac", "opus", nullptr};
 const char *video_codecs[] = {"h264", nullptr};
 
 MOQService::MOQService(obs_data_t *settings, obs_service_t *service)
