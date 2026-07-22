@@ -67,8 +67,35 @@ bool MOQOutput::LoadVideoEncoderSettings()
 	size_t extra_size = 0;
 	obs_encoder_get_extra_data(venc, &extra, &extra_size);
 
-	init_data = AnnexBToAvcC(extra, extra_size);
-	codec_string = AvcCodecString(init_data);
+	video_init_data = AnnexBToAvcC(extra, extra_size);
+	video_codec = AvcCodecString(video_init_data);
+	return true;
+}
+
+bool MOQOutput::LoadAudioEncoderSettings()
+{
+	obs_encoder_t *aenc = obs_output_get_audio_encoder(output, 0);
+	if (!aenc) {
+		blog(LOG_WARNING, "[obs-moq] no audio encoder assigned");
+		obs_output_set_last_error(output, obs_module_text("Error.NoAudioEncoder"));
+		return false;
+	}
+
+	OBSDataAutoRelease settings = obs_encoder_get_settings(aenc);
+	audio_conf.bitrate = (uint64_t)obs_data_get_int(settings, "bitrate") * 1000;
+	audio_t *audio = obs_encoder_audio(aenc);
+	audio_conf.samplerate = audio_output_get_sample_rate(audio);
+	audio_conf.channels = std::to_string(audio_output_get_channels(audio));
+
+	const char *codec = obs_encoder_get_codec(aenc);
+	//todo: add codec validation here
+
+	uint8_t *extra = nullptr;
+	size_t extra_size = 0;
+	obs_encoder_get_extra_data(aenc, &extra, &extra_size);
+	audio_init_data.assign(extra, extra + extra_size);
+	audio_codec = AacCodecString(audio_init_data);
+
 	return true;
 }
 
@@ -111,7 +138,7 @@ bool MOQOutput::ResolveServiceConfig()
 	return true;
 }
 
-bool MOQOutput::CreateVideoTrack(moq_media_sender_t *new_sender)
+moq_media_track_t *MOQOutput::CreateVideoTrack(moq_media_sender_t *new_sender)
 {
 	moq_media_track_cfg_t tcfg;
 	moq_media_track_cfg_init(&tcfg);
@@ -119,10 +146,10 @@ bool MOQOutput::CreateVideoTrack(moq_media_sender_t *new_sender)
 	tcfg.media_type = MOQ_MEDIA_TYPE_VIDEO;
 	// todo: make this configurable and add CMAF support
 	tcfg.packaging = MOQ_MEDIA_PACKAGING_RAW;
-	tcfg.codec = {(const uint8_t *)codec_string.c_str(), codec_string.size()};
+	tcfg.codec = {(const uint8_t *)video_codec.c_str(), video_codec.size()};
 	tcfg.timescale = VIDEO_TIMESCALE;
 	// todo: analyze actual need for this and how it fits w/other codecs
-	tcfg.init_data = {init_data.data(), init_data.size()};
+	tcfg.init_data = {video_init_data.data(), video_init_data.size()};
 	tcfg.is_live = true;
 	tcfg.width = video_conf.video_width;
 	tcfg.height = video_conf.video_height;
@@ -132,18 +159,29 @@ bool MOQOutput::CreateVideoTrack(moq_media_sender_t *new_sender)
 	moq_media_track_t *new_track = nullptr;
 	moq_result_t result = moq_media_sender_add_track(new_sender, &tcfg, &new_track);
 	if (result != MOQ_OK) {
-		blog(LOG_WARNING, "[obs-moq] moq_media_sender_add_track failed");
-		obs_output_signal_stop(output, OBS_OUTPUT_ERROR);
-		return false;
+		return nullptr;
 	}
 
-	{
-		std::lock_guard<std::mutex> lock(sender_mutex);
-		sender = new_sender;
-		video_track = new_track;
-	}
+	return new_track;
+}
 
-	return true;
+moq_media_track_t *MOQOutput::CreateAudioTrack(moq_media_sender_t *new_sender)
+{
+	moq_media_track_cfg_t tcfg;
+	moq_media_track_cfg_init(&tcfg);
+	tcfg.name = {(const uint8_t *)"audio", 5};
+	tcfg.media_type = MOQ_MEDIA_TYPE_AUDIO;
+	tcfg.packaging = MOQ_MEDIA_PACKAGING_RAW;
+	tcfg.codec = {(const uint8_t *)audio_codec.c_str(), audio_codec.size()};
+	tcfg.samplerate = audio_conf.samplerate;
+	tcfg.channel_config = {(const uint8_t *)audio_conf.channels.c_str(), audio_conf.channels.size()};
+	tcfg.bitrate = audio_conf.bitrate;
+	moq_media_track_t *new_track = nullptr;
+	moq_result_t result = moq_media_sender_add_track(new_sender, &tcfg, &new_track);
+	if (result != MOQ_OK) {
+		return nullptr;
+	}
+	return new_track;
 }
 
 void MOQOutput::OnReady(void *ctx, moq_media_sender_t *sender)
@@ -219,10 +257,27 @@ bool MOQOutput::Connect()
 		return false;
 	}
 
-	if (!CreateVideoTrack(media_sender)) {
+	moq_media_track_t *new_video_track = CreateVideoTrack(media_sender);
+	if (!new_video_track) {
 		blog(LOG_WARNING, "[obs-moq] failed to create video track");
 		moq_media_sender_destroy(media_sender);
+		obs_output_signal_stop(output, OBS_OUTPUT_ERROR);
 		return false;
+	}
+
+	moq_media_track_t *new_audio_track = CreateAudioTrack(media_sender);
+	if (!new_audio_track) {
+		blog(LOG_WARNING, "[obs-moq] failed to create audio track");
+		moq_media_sender_destroy(media_sender);
+		obs_output_signal_stop(output, OBS_OUTPUT_ERROR);
+		return false;
+	}
+
+	{
+		std::lock_guard<std::mutex> lock(sender_mutex);
+		sender = media_sender;
+		video_track = new_video_track;
+		audio_track = new_audio_track;
 	}
 
 	return true;
@@ -278,6 +333,7 @@ void MOQOutput::Stop(bool signal)
 		doomed = sender;
 		sender = nullptr;
 		video_track = nullptr;
+		audio_track = nullptr;
 	}
 	if (doomed) {
 		moq_media_sender_destroy(doomed);
@@ -292,17 +348,9 @@ void MOQOutput::Stop(bool signal)
 	start_time_ns = os_gettime_ns();
 }
 
-void MOQOutput::Data(struct encoder_packet *packet)
+void MOQOutput::SendPacket(struct encoder_packet *packet, moq_media_track_t *track, bool is_sync, bool starts_group,
+			   bool ends_group)
 {
-	if (!packet) {
-		Stop(false);
-		obs_output_signal_stop(output, OBS_OUTPUT_ENCODE_ERROR);
-		return;
-	}
-
-	if (!running.load() || packet->type != OBS_ENCODER_VIDEO) {
-		return;
-	}
 
 	moq_rcbuf_t *payload = nullptr;
 	// moq_rcbuf_create will copy the data into a new rcbuf, and increment the refcount. We will need to decref it after sending, or if we don't send it.
@@ -319,21 +367,21 @@ void MOQOutput::Data(struct encoder_packet *packet)
 	obj.struct_size = sizeof(obj);
 	obj.payload = payload;
 	obj.properties = nullptr;
-	obj.is_sync = packet->keyframe;
-	obj.starts_group = packet->keyframe;
-	obj.ends_group = false;
+	obj.is_sync = is_sync;
+	obj.starts_group = starts_group;
+	obj.ends_group = ends_group;
 	obj.presentation_time_us = pts_usec;
 	obj.decode_time_us = (uint64_t)packet->dts_usec;
 
 	moq_result_t res;
 	{
 		std::lock_guard<std::mutex> lock(sender_mutex);
-		if (!sender || !video_track) {
+		if (!sender || !track) {
 			// release the rcbuf since we won't be sending it
 			moq_rcbuf_decref(payload);
 			return;
 		}
-		res = moq_media_sender_write(sender, video_track, &obj);
+		res = moq_media_sender_write(sender, track, &obj);
 	}
 
 	if (res != MOQ_OK) {
@@ -342,6 +390,25 @@ void MOQOutput::Data(struct encoder_packet *packet)
 	}
 
 	total_bytes_sent.fetch_add(packet->size);
+}
+
+void MOQOutput::Data(struct encoder_packet *packet)
+{
+	if (!packet) {
+		Stop(false);
+		obs_output_signal_stop(output, OBS_OUTPUT_ENCODE_ERROR);
+		return;
+	}
+
+	if (!running.load()) {
+		return;
+	}
+	if (packet->type == OBS_ENCODER_VIDEO) {
+		SendPacket(packet, video_track, packet->keyframe, packet->keyframe, false);
+	}
+	if (packet->type == OBS_ENCODER_AUDIO) {
+		SendPacket(packet, audio_track, true, true, true);
+	}
 }
 
 void MOQOutput::StartThread()
@@ -353,8 +420,8 @@ void MOQOutput::StartThread()
 		return;
 	}
 
-	if (!LoadVideoEncoderSettings()) {
-		blog(LOG_WARNING, "[obs-moq] failed to configure video track");
+	if (!LoadVideoEncoderSettings() || !LoadAudioEncoderSettings()) {
+		blog(LOG_WARNING, "[obs-moq] failed to configure video or audio track");
 		return;
 	}
 
@@ -369,12 +436,12 @@ void register_moq_output()
 	struct obs_output_info info = {};
 	info.id = "moq_output";
 	// todo: change to OBS_OUTPUT_AV when audio is supported
-	info.flags = OBS_OUTPUT_VIDEO | OBS_OUTPUT_ENCODED | OBS_OUTPUT_SERVICE;
+	info.flags = OBS_OUTPUT_AV | OBS_OUTPUT_ENCODED | OBS_OUTPUT_SERVICE;
 	info.protocols = "MOQ";
 	// todo: add support for hevc and av1
 	info.encoded_video_codecs = "h264";
-	// todo: add support for audio
-	// info.encoded_audio_codecs = "aac;opus";
+	// todo: add support for opus and ac3
+	info.encoded_audio_codecs = "aac";
 
 	info.get_name = [](void *) -> const char * {
 		return obs_module_text("Output.Name");
