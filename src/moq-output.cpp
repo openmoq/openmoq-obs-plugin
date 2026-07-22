@@ -100,8 +100,6 @@ bool MOQOutput::LoadAudioEncoderSettings()
 		audio_init_data.assign(extra, extra + extra_size);
 		audio_codec = AacCodecString(audio_init_data);
 	}
-	
-
 
 	return true;
 }
