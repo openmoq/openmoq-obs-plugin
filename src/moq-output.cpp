@@ -89,12 +89,17 @@ bool MOQOutput::LoadAudioEncoderSettings()
 
 	const char *codec = obs_encoder_get_codec(aenc);
 	//todo: add codec validation here
-
 	uint8_t *extra = nullptr;
 	size_t extra_size = 0;
 	obs_encoder_get_extra_data(aenc, &extra, &extra_size);
-	audio_init_data.assign(extra, extra + extra_size);
-	audio_codec = AacCodecString(audio_init_data);
+
+	if (codec && strcmp(codec, "opus") == 0) {
+		audio_init_data.clear();
+		audio_codec = "opus";
+	} else {
+		audio_init_data.assign(extra, extra + extra_size);
+		audio_codec = AacCodecString(audio_init_data);
+	}
 
 	return true;
 }
@@ -441,7 +446,7 @@ void register_moq_output()
 	// todo: add support for hevc and av1
 	info.encoded_video_codecs = "h264";
 	// todo: add support for opus and ac3
-	info.encoded_audio_codecs = "aac";
+	info.encoded_audio_codecs = "aac,opus";
 
 	info.get_name = [](void *) -> const char * {
 		return obs_module_text("Output.Name");
