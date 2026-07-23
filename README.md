@@ -1,8 +1,8 @@
-# OBS MOQ Plugin
+# MOQ Plugin
 
 ## Introduction
 
-This is an OBS Studio plugin that streams video over [MOQ](https://datatracker.ietf.org/wg/moq/about/), using [openmoq/moq5](https://github.com/openmoq/moq5) as the underlying protocol implementation.
+This is an OpenMOQ plugin for OBS that streams video over [MOQ](https://datatracker.ietf.org/wg/moq/about/), using [openmoq/moq5](https://github.com/openmoq/moq5) as the underlying protocol implementation.
 
 **This project is under active development.** It may contain bugs, and several features are still in progress or not yet implemented. See the [Roadmap](#roadmap) section below for what's currently missing.
 
