@@ -45,8 +45,9 @@ private:
 	bool LoadVideoEncoderSettings();
 	bool LoadAudioEncoderSettings();
 	moq_media_track_t *CreateVideoTrack(moq_media_sender_t *new_sender);
+	moq_media_track_t *CreateVideoTrackFromPacket(moq_media_sender_t *cur_sender, struct encoder_packet *packet);
 	moq_media_track_t *CreateAudioTrack(moq_media_sender_t *new_sender);
-	void SendPacket(struct encoder_packet *packet, moq_media_track_t *track, bool is_sync, bool starts_group,
+	void SendPacket(struct encoder_packet *packet, moq_media_track_t **track, bool is_sync, bool starts_group,
 			bool ends_group);
 	bool ResolveServiceConfig();
 	bool Connect();

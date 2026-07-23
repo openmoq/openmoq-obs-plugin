@@ -165,6 +165,27 @@ moq_media_track_t *MOQOutput::CreateVideoTrack(moq_media_sender_t *new_sender)
 	return new_track;
 }
 
+moq_media_track_t *MOQOutput::CreateVideoTrackFromPacket(moq_media_sender_t *cur_sender, struct encoder_packet *packet)
+{
+	std::vector<uint8_t> init = AnnexBToAvcC(packet->data, packet->size);
+	if (init.empty()) {
+		return nullptr;
+	}
+
+	video_init_data = std::move(init);
+	video_codec = AvcCodecString(video_init_data);
+
+	moq_media_track_t *new_track = CreateVideoTrack(cur_sender);
+	if (!new_track) {
+		blog(LOG_WARNING, "[obs-moq] failed to create video track from first frame");
+		return nullptr;
+	}
+
+	blog(LOG_INFO, "[obs-moq] video track created from first frame (codec %s, init_data %zu bytes)",
+	     video_codec.c_str(), video_init_data.size());
+	return new_track;
+}
+
 moq_media_track_t *MOQOutput::CreateAudioTrack(moq_media_sender_t *new_sender)
 {
 	moq_media_track_cfg_t tcfg;
@@ -257,12 +278,15 @@ bool MOQOutput::Connect()
 		return false;
 	}
 
-	moq_media_track_t *new_video_track = CreateVideoTrack(media_sender);
-	if (!new_video_track) {
-		blog(LOG_WARNING, "[obs-moq] failed to create video track");
-		moq_media_sender_destroy(media_sender);
-		obs_output_signal_stop(output, OBS_OUTPUT_ERROR);
-		return false;
+	moq_media_track_t *new_video_track = nullptr;
+	if (!video_init_data.empty()) {
+		new_video_track = CreateVideoTrack(media_sender);
+		if (!new_video_track) {
+			blog(LOG_WARNING, "[obs-moq] failed to create video track");
+			moq_media_sender_destroy(media_sender);
+			obs_output_signal_stop(output, OBS_OUTPUT_ERROR);
+			return false;
+		}
 	}
 
 	moq_media_track_t *new_audio_track = CreateAudioTrack(media_sender);
@@ -348,8 +372,8 @@ void MOQOutput::Stop(bool signal)
 	start_time_ns = os_gettime_ns();
 }
 
-void MOQOutput::SendPacket(struct encoder_packet *packet, moq_media_track_t *track, bool is_sync, bool starts_group,
-			   bool ends_group)
+void MOQOutput::SendPacket(struct encoder_packet *packet, moq_media_track_t **track, bool is_sync,
+			   bool starts_group, bool ends_group)
 {
 
 	moq_rcbuf_t *payload = nullptr;
@@ -376,12 +400,21 @@ void MOQOutput::SendPacket(struct encoder_packet *packet, moq_media_track_t *tra
 	moq_result_t res;
 	{
 		std::lock_guard<std::mutex> lock(sender_mutex);
-		if (!sender || !track) {
-			// release the rcbuf since we won't be sending it
+		if (!sender) {
 			moq_rcbuf_decref(payload);
 			return;
 		}
-		res = moq_media_sender_write(sender, track, &obj);
+
+		if (!*track && packet->type == OBS_ENCODER_VIDEO && packet->keyframe) {
+			*track = CreateVideoTrackFromPacket(sender, packet);
+		}
+
+		if (!*track) {
+			moq_rcbuf_decref(payload);
+			return;
+		}
+
+		res = moq_media_sender_write(sender, *track, &obj);
 	}
 
 	if (res != MOQ_OK) {
@@ -404,10 +437,10 @@ void MOQOutput::Data(struct encoder_packet *packet)
 		return;
 	}
 	if (packet->type == OBS_ENCODER_VIDEO) {
-		SendPacket(packet, video_track, packet->keyframe, packet->keyframe, false);
+		SendPacket(packet, &video_track, packet->keyframe, packet->keyframe, false);
 	}
 	if (packet->type == OBS_ENCODER_AUDIO) {
-		SendPacket(packet, audio_track, true, true, true);
+		SendPacket(packet, &audio_track, true, true, true);
 	}
 }
 
