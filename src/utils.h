@@ -1,49 +1,32 @@
 #pragma once
 
-#include <obs-avc.h>
-#include <obs-hevc.h>
+#include <moq/codec_string.h>
+#include <string>
 #include <vector>
 
-static std::string AvcCodecString(const std::vector<uint8_t> &avcc)
+/* Build a codec's init_data (decoder configuration record, e.g. an avcC from
+ * Annex B SPS/PPS, or an AudioSpecificConfig passed through) via moq5's
+ * codec utility into `out`. Returns MOQ_OK or the underlying error. */
+static moq_result_t BuildInitData(const moq_codec_init_data_cfg_t *cfg, std::vector<uint8_t> &out)
 {
-	uint8_t profile = 0x42, constraints = 0xe0, level = 0x1f;
+	size_t need = 0;
+	moq_result_t rc = moq_codec_init_data_build(cfg, nullptr, 0, &need);
+	if (rc != MOQ_ERR_BUFFER)
+		return rc; /* MOQ_ERR_INVAL / MOQ_ERR_PROTO / MOQ_ERR_UNSUPPORTED */
 
-	if (avcc.size() >= 4 && avcc[0] == 1) {
-		profile = avcc[1];
-		constraints = avcc[2];
-		level = avcc[3];
-	}
-
-	char buf[16];
-	snprintf(buf, sizeof(buf), "avc1.%02x%02x%02x", profile, constraints, level);
-	return buf;
+	out.resize(need);
+	return moq_codec_init_data_build(cfg, out.data(), out.size(), &need);
 }
 
-static std::vector<uint8_t> AnnexBToAvcC(const uint8_t *extra, size_t size)
+/* Format an MSF/WebCodecs codec string via moq5's codec utility into `out`.
+ * Returns MOQ_OK or the underlying error. */
+static moq_result_t CodecString(const moq_codec_string_cfg_t *cfg, std::string &out)
 {
-	uint8_t *avcc = nullptr;
-	size_t avcc_size = obs_parse_avc_header(&avcc, extra, size);
-	if (!avcc || avcc_size == 0) {
-		bfree(avcc);
-		return {};
-	}
-	std::vector<uint8_t> out(avcc, avcc + avcc_size);
-	bfree(avcc);
-	return out;
-}
+	size_t need = 0;
+	moq_result_t rc = moq_codec_string_format(cfg, nullptr, 0, &need);
+	if (rc != MOQ_ERR_BUFFER)
+		return rc; /* MOQ_ERR_INVAL / MOQ_ERR_PROTO / MOQ_ERR_UNSUPPORTED */
 
-static std::string AacCodecString(const std::vector<uint8_t> &asc)
-{
-	uint8_t object_type = 2;
-
-	if (asc.size() >= 2) {
-		object_type = (asc[0] >> 3) & 0x1f;
-		if (object_type == 31 && asc.size() >= 3) {
-			object_type = 32 + (((asc[1] & 0x07) << 3) | ((asc[2] >> 5) & 0x07));
-		}
-	}
-
-	char buf[16];
-	snprintf(buf, sizeof(buf), "mp4a.40.%u", object_type);
-	return buf;
+	out.resize(need);
+	return moq_codec_string_format(cfg, reinterpret_cast<uint8_t *>(out.data()), out.size(), &need);
 }

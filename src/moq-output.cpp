@@ -67,8 +67,32 @@ bool MOQOutput::LoadVideoEncoderSettings()
 	size_t extra_size = 0;
 	obs_encoder_get_extra_data(venc, &extra, &extra_size);
 
-	video_init_data = AnnexBToAvcC(extra, extra_size);
-	video_codec = AvcCodecString(video_init_data);
+	/* OBS delivers AVC extradata as Annex B SPS/PPS; moq5 builds the avcC
+	 * init_data (used both as track init_data and codec-string input). */
+	moq_codec_init_data_cfg_t icfg;
+	moq_codec_init_data_cfg_init(&icfg);
+	icfg.source_format = MOQ_CODEC_SOURCE_AVC_ANNEXB;
+	icfg.source = {extra, extra_size};
+
+	moq_result_t rc = BuildInitData(&icfg, video_init_data);
+	if (rc != MOQ_OK) {
+		blog(LOG_WARNING, "[obs-moq] failed to build video init_data: %s", moq_strerror(rc));
+		obs_output_set_last_error(output, obs_module_text("Error.NoEncoder"));
+		return false;
+	}
+
+	moq_codec_string_cfg_t ccfg;
+	moq_codec_string_cfg_init(&ccfg);
+	ccfg.config_format = MOQ_CODEC_CONFIG_AVCC;
+	ccfg.sample_entry = {(const uint8_t *)"avc1", 4};
+	ccfg.decoder_config = {video_init_data.data(), video_init_data.size()};
+
+	rc = CodecString(&ccfg, video_codec);
+	if (rc != MOQ_OK) {
+		blog(LOG_WARNING, "[obs-moq] failed to format video codec string: %s", moq_strerror(rc));
+		obs_output_set_last_error(output, obs_module_text("Error.NoEncoder"));
+		return false;
+	}
 	return true;
 }
 
@@ -93,8 +117,34 @@ bool MOQOutput::LoadAudioEncoderSettings()
 	uint8_t *extra = nullptr;
 	size_t extra_size = 0;
 	obs_encoder_get_extra_data(aenc, &extra, &extra_size);
-	audio_init_data.assign(extra, extra + extra_size);
-	audio_codec = AacCodecString(audio_init_data);
+	/* OBS delivers AAC extradata as a raw AudioSpecificConfig; moq5 validates
+	 * and passes it through as the init_data (and codec-string input). */
+	moq_codec_init_data_cfg_t icfg;
+	moq_codec_init_data_cfg_init(&icfg);
+	icfg.source_format = MOQ_CODEC_SOURCE_AAC_ASC;
+	icfg.source = {extra, extra_size};
+
+	moq_result_t rc = BuildInitData(&icfg, audio_init_data);
+	if (rc != MOQ_OK) {
+		blog(LOG_WARNING, "[obs-moq] failed to build audio init_data: %s", moq_strerror(rc));
+		obs_output_set_last_error(output, obs_module_text("Error.NoAudioEncoder"));
+		return false;
+	}
+
+	moq_codec_string_cfg_t ccfg;
+	moq_codec_string_cfg_init(&ccfg);
+	ccfg.config_format = MOQ_CODEC_CONFIG_AAC_ASC;
+	ccfg.sample_entry = {(const uint8_t *)"mp4a", 4};
+	ccfg.has_mp4_object_type_indication = true;
+	ccfg.mp4_object_type_indication = 0x40;
+	ccfg.decoder_config = {audio_init_data.data(), audio_init_data.size()};
+
+	rc = CodecString(&ccfg, audio_codec);
+	if (rc != MOQ_OK) {
+		blog(LOG_WARNING, "[obs-moq] failed to format audio codec string: %s", moq_strerror(rc));
+		obs_output_set_last_error(output, obs_module_text("Error.NoAudioEncoder"));
+		return false;
+	}
 
 	return true;
 }

@@ -19,7 +19,9 @@ find_package(libobs REQUIRED)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs)
 
 find_package(libmoq REQUIRED COMPONENTS service)
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE moq::service)
+# moq::codec-string is exported via the main libmoqTargets (like moq::core /
+# moq::cmaf), so it is linked directly rather than requested as a component.
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE moq::service moq::codec-string)
 
 if(ENABLE_FRONTEND_API)
   find_package(obs-frontend-api REQUIRED)
