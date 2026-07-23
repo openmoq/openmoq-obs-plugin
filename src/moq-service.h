@@ -13,6 +13,7 @@ public:
 
 	void Update(obs_data_t *settings);
 	static void ApplyEncoderSettings(obs_data_t *video_settings, obs_data_t *audio_settings);
+	static bool Initialize(obs_output_t *output);
 	static obs_properties_t *Properties();
 	const char *GetConnectInfo(enum obs_service_connect_info info);
 	bool CanTryToConnect();

@@ -1,5 +1,8 @@
 #include "moq-service.h"
 
+#include <cstring>
+#include <obs.hpp>
+
 const char *audio_codecs[] = {"aac", nullptr};
 const char *video_codecs[] = {"h264", nullptr};
 
@@ -34,7 +37,27 @@ void MOQService::ApplyEncoderSettings(obs_data_t *video_settings, obs_data_t *au
 		obs_data_set_int(video_settings, "bf", 0);
 		//todo: check if this is needed
 		obs_data_set_bool(video_settings, "repeat_headers", true);
+		obs_data_set_int(video_settings, "keyint_sec", 2);
 	}
+}
+
+bool MOQService::Initialize(obs_output_t *output)
+{
+	obs_encoder_t *venc = obs_output_get_video_encoder(output);
+	if (!venc)
+		return true;
+
+	const char *enc_id = obs_encoder_get_id(venc);
+	if (!enc_id)
+		return true;
+
+	if (strcmp(enc_id, "obs_x264") == 0) {
+		OBSDataAutoRelease tune = obs_data_create();
+		obs_data_set_string(tune, "tune", "zerolatency");
+		obs_encoder_update(venc, tune);
+	}
+
+	return true;
 }
 
 const char *MOQService::GetConnectInfo(enum obs_service_connect_info info)
@@ -86,6 +109,10 @@ void register_moq_service()
 	info.apply_encoder_settings = [](void *, obs_data_t *video_settings, obs_data_t *audio_settings) {
 		MOQService::ApplyEncoderSettings(video_settings, audio_settings);
 	};
+	info.initialize = [](void *, obs_output_t *output) -> bool {
+		return MOQService::Initialize(output);
+	};
+
 	info.get_supported_video_codecs = [](void *) -> const char ** {
 		return video_codecs;
 	};
