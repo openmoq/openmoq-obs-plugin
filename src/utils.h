@@ -1,6 +1,7 @@
 #pragma once
 
 #include <obs-avc.h>
+#include <obs-hevc.h>
 #include <vector>
 
 static std::string AvcCodecString(const std::vector<uint8_t> &avcc)
@@ -29,4 +30,20 @@ static std::vector<uint8_t> AnnexBToAvcC(const uint8_t *extra, size_t size)
 	std::vector<uint8_t> out(avcc, avcc + avcc_size);
 	bfree(avcc);
 	return out;
+}
+
+static std::string AacCodecString(const std::vector<uint8_t> &asc)
+{
+	uint8_t object_type = 2;
+
+	if (asc.size() >= 2) {
+		object_type = (asc[0] >> 3) & 0x1f;
+		if (object_type == 31 && asc.size() >= 3) {
+			object_type = 32 + (((asc[1] & 0x07) << 3) | ((asc[2] >> 5) & 0x07));
+		}
+	}
+
+	char buf[16];
+	snprintf(buf, sizeof(buf), "mp4a.40.%u", object_type);
+	return buf;
 }

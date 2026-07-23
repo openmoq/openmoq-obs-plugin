@@ -3,7 +3,7 @@
 #include <cstring>
 #include <obs.hpp>
 
-const char *audio_codecs[] = {nullptr};
+const char *audio_codecs[] = {"aac", nullptr};
 const char *video_codecs[] = {"h264", nullptr};
 
 MOQService::MOQService(obs_data_t *settings, obs_service_t *service)
@@ -116,15 +116,9 @@ void register_moq_service()
 	info.get_supported_video_codecs = [](void *) -> const char ** {
 		return video_codecs;
 	};
-	// info.get_supported_audio_codecs = [](void *) -> const char ** {
-	// 	return audio_codecs;
-	// };
-
-	// TODO: Check
-	// info.get_defaults = [](obs_data_t *settings) {
-	// 	obs_data_set_default_bool(settings, "insecure_skip_verify", true);
-	// };
-
+	info.get_supported_audio_codecs = [](void *) -> const char ** {
+		return audio_codecs;
+	};
 	info.can_try_to_connect = [](void *priv_data) -> bool {
 		return static_cast<MOQService *>(priv_data)->CanTryToConnect();
 	};
